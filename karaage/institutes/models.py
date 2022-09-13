@@ -50,34 +50,36 @@ class Institute(models.Model):
         app_label = 'karaage'
 
     def save(self, *args, **kwargs):
-        created = self.pk is None
+        with self._tracker:
+            # Don't update tracker state until done.
+            created = self.pk is None
 
-        # save the object
-        super(Institute, self).save(*args, **kwargs)
+            # save the object
+            super(Institute, self).save(*args, **kwargs)
 
-        if created:
-            log.add(self, 'Created')
-        for field in self._tracker.changed():
-            log.change(self, 'Changed %s to %s'
-                       % (field, getattr(self, field)))
+            if created:
+                log.add(self, 'Created')
+            for field in self._tracker.changed():
+                log.change(self, 'Changed %s to %s'
+                           % (field, getattr(self, field)))
 
-        # update the datastore
-        from karaage.datastores import save_institute
-        save_institute(self)
+            # update the datastore
+            from karaage.datastores import save_institute
+            save_institute(self)
 
-        # has group changed?
-        if self._tracker.has_changed("group_id"):
-            old_group_pk = self._tracker.previous("group_id")
-            new_group = self.group
-            if old_group_pk is not None:
-                old_group = Group.objects.get(pk=old_group_pk)
-                from karaage.datastores import remove_accounts_from_institute
-                query = Account.objects.filter(person__groups=old_group)
-                remove_accounts_from_institute(query, self)
-            if new_group is not None:
-                from karaage.datastores import add_accounts_to_institute
-                query = Account.objects.filter(person__groups=new_group)
-                add_accounts_to_institute(query, self)
+            # has group changed?
+            if self._tracker.has_changed("group_id"):
+                old_group_pk = self._tracker.previous("group_id")
+                new_group = self.group
+                if old_group_pk is not None:
+                    old_group = Group.objects.get(pk=old_group_pk)
+                    from karaage.datastores import remove_accounts_from_institute
+                    query = Account.objects.filter(person__groups=old_group)
+                    remove_accounts_from_institute(query, self)
+                if new_group is not None:
+                    from karaage.datastores import add_accounts_to_institute
+                    query = Account.objects.filter(person__groups=new_group)
+                    add_accounts_to_institute(query, self)
     save.alters_data = True
 
     def delete(self, *args, **kwargs):
@@ -151,13 +153,15 @@ class InstituteDelegate(models.Model):
         app_label = 'karaage'
 
     def save(self, *args, **kwargs):
-        super(InstituteDelegate, self).save(*args, **kwargs)
+        with self._tracker:
+            # Don't update tracker state until done.
+            super(InstituteDelegate, self).save(*args, **kwargs)
 
-        for field in self._tracker.changed():
-            log.change(
-                self.institute,
-                'Delegate %s: Changed %s to %s' %
-                (self.person, field, getattr(self, field)))
+            for field in self._tracker.changed():
+                log.change(
+                    self.institute,
+                    'Delegate %s: Changed %s to %s' %
+                    (self.person, field, getattr(self, field)))
 
     def delete(self, *args, **kwargs):
         super(InstituteDelegate, self).delete(*args, **kwargs)

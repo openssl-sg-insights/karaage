@@ -73,48 +73,50 @@ class Project(models.Model):
         return reverse('kg_project_detail', args=[self.id])
 
     def save(self, *args, **kwargs):
-        created = self.pk is None
+        with self._tracker:
+            # Don't update tracker state until done.
+            created = self.pk is None
 
-        # set group if not already set
-        if self.group_id is None:
-            name = self.pid
-            self.group, _ = Group.objects.get_or_create(name=name)
+            # set group if not already set
+            if self.group_id is None:
+                name = self.pid
+                self.group, _ = Group.objects.get_or_create(name=name)
 
-        # save the object
-        super(Project, self).save(*args, **kwargs)
+            # save the object
+            super(Project, self).save(*args, **kwargs)
 
-        if created:
-            log.add(self, 'Created')
-        for field in self._tracker.changed():
-            log.change(self, 'Changed %s to %s'
-                       % (field, getattr(self, field)))
+            if created:
+                log.add(self, 'Created')
+            for field in self._tracker.changed():
+                log.change(self, 'Changed %s to %s'
+                           % (field, getattr(self, field)))
 
-        # has pid changed?
-        self._tracker.has_changed("pid")
-        if self._tracker.has_changed("pid"):
-            old_pid = self._tracker.previous('pid')
-            if old_pid is not None:
-                from karaage.datastores import set_project_pid
-                set_project_pid(self, old_pid, self.pid)
-                log.change(self, 'Renamed %s to %s' % (old_pid, self.pid))
+            # has pid changed?
+            self._tracker.has_changed("pid")
+            if self._tracker.has_changed("pid"):
+                old_pid = self._tracker.previous('pid')
+                if old_pid is not None:
+                    from karaage.datastores import set_project_pid
+                    set_project_pid(self, old_pid, self.pid)
+                    log.change(self, 'Renamed %s to %s' % (old_pid, self.pid))
 
-        # update the datastore
-        from karaage.datastores import save_project
-        save_project(self)
+            # update the datastore
+            from karaage.datastores import save_project
+            save_project(self)
 
-        # has group changed?
-        if self._tracker.has_changed("group_id"):
-            old_group_pk = self._tracker.previous("group_id")
-            new_group = self.group
-            if old_group_pk is not None:
-                old_group = Group.objects.get(pk=old_group_pk)
-                from karaage.datastores import remove_accounts_from_project
-                query = Account.objects.filter(person__groups=old_group)
-                remove_accounts_from_project(query, self)
-            if new_group is not None:
-                from karaage.datastores import add_accounts_to_project
-                query = Account.objects.filter(person__groups=new_group)
-                add_accounts_to_project(query, self)
+            # has group changed?
+            if self._tracker.has_changed("group_id"):
+                old_group_pk = self._tracker.previous("group_id")
+                new_group = self.group
+                if old_group_pk is not None:
+                    old_group = Group.objects.get(pk=old_group_pk)
+                    from karaage.datastores import remove_accounts_from_project
+                    query = Account.objects.filter(person__groups=old_group)
+                    remove_accounts_from_project(query, self)
+                if new_group is not None:
+                    from karaage.datastores import add_accounts_to_project
+                    query = Account.objects.filter(person__groups=new_group)
+                    add_accounts_to_project(query, self)
     save.alters_data = True
 
     def delete(self, *args, **kwargs):

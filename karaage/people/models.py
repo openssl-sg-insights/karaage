@@ -115,54 +115,56 @@ class Person(AbstractBaseUser):
         return reverse('kg_person_detail', kwargs={'username': self.username})
 
     def save(self, *args, **kwargs):
-        created = self.pk is None
+        with self._tracker:
+            # Don't update tracker state until done.
+            created = self.pk is None
 
-        # save the object
-        super(Person, self).save(*args, **kwargs)
+            # save the object
+            super(Person, self).save(*args, **kwargs)
 
-        if created:
-            log.add(self, 'Created')
-        for field in self._tracker.changed():
-            if field != "password":
-                log.change(
-                    self,
-                    'Changed %s to %s' % (field, getattr(self, field)))
+            if created:
+                log.add(self, 'Created')
+            for field in self._tracker.changed():
+                if field != "password":
+                    log.change(
+                        self,
+                        'Changed %s to %s' % (field, getattr(self, field)))
 
-        # update datastores
-        from karaage.datastores import save_account
-        for ua in self.account_set.filter(date_deleted__isnull=True):
-            save_account(ua)
-
-        # has locked status changed?
-        if self._tracker.has_changed("login_enabled"):
-            if self.login_enabled:
-                for ua in self.account_set.filter(date_deleted__isnull=True):
-                    ua.unlock()
-            else:
-                for ua in self.account_set.filter(date_deleted__isnull=True):
-                    ua.lock()
-
-        # has the institute changed?
-        if self._tracker.has_changed("institute_id"):
-            from karaage.institutes.models import Institute
-            old_institute_pk = self._tracker.previous("institute_id")
-            new_institute = self.institute
-            if old_institute_pk is not None:
-                old_institute = Institute.objects.get(pk=old_institute_pk)
-                from karaage.datastores import remove_accounts_from_institute
-                query = self.account_set
-                remove_accounts_from_institute(query, old_institute)
-            if new_institute is not None:
-                from karaage.datastores import add_accounts_to_institute
-                query = self.account_set
-                add_accounts_to_institute(query, new_institute)
-
-        if self._raw_password is not None:
+            # update datastores
+            from karaage.datastores import save_account
             for ua in self.account_set.filter(date_deleted__isnull=True):
-                ua.set_password(self._raw_password)
-                ua.save()
-            log.change(self, 'Changed Password')
-            self._raw_password = None
+                save_account(ua)
+
+            # has locked status changed?
+            if self._tracker.has_changed("login_enabled"):
+                if self.login_enabled:
+                    for ua in self.account_set.filter(date_deleted__isnull=True):
+                        ua.unlock()
+                else:
+                    for ua in self.account_set.filter(date_deleted__isnull=True):
+                        ua.lock()
+
+            # has the institute changed?
+            if self._tracker.has_changed("institute_id"):
+                from karaage.institutes.models import Institute
+                old_institute_pk = self._tracker.previous("institute_id")
+                new_institute = self.institute
+                if old_institute_pk is not None:
+                    old_institute = Institute.objects.get(pk=old_institute_pk)
+                    from karaage.datastores import remove_accounts_from_institute
+                    query = self.account_set
+                    remove_accounts_from_institute(query, old_institute)
+                if new_institute is not None:
+                    from karaage.datastores import add_accounts_to_institute
+                    query = self.account_set
+                    add_accounts_to_institute(query, new_institute)
+
+            if self._raw_password is not None:
+                for ua in self.account_set.filter(date_deleted__isnull=True):
+                    ua.set_password(self._raw_password)
+                    ua.save()
+                log.change(self, 'Changed Password')
+                self._raw_password = None
     save.alters_data = True
 
     def delete(self, *args, **kwargs):
@@ -410,26 +412,28 @@ class Group(models.Model):
         return reverse('kg_group_detail', kwargs={'group_name': self.name})
 
     def save(self, *args, **kwargs):
-        created = self.pk is None
+        with self._tracker:
+            # Don't update tracker state until done.
+            created = self.pk is None
 
-        # save the object
-        super(Group, self).save(*args, **kwargs)
+            # save the object
+            super(Group, self).save(*args, **kwargs)
 
-        if created:
-            log.add(self, 'Created')
-        for field in self._tracker.changed():
-            log.field_change(self, field=field, new_value=getattr(self, field))
+            if created:
+                log.add(self, 'Created')
+            for field in self._tracker.changed():
+                log.field_change(self, field=field, new_value=getattr(self, field))
 
-        old_name = self._tracker.previous("name")
-        new_name = self.name
-        if old_name is not None and old_name != new_name:
-            from karaage.datastores import set_group_name
-            set_group_name(self, old_name, new_name)
-            log.change(self, "Renamed group")
+            old_name = self._tracker.previous("name")
+            new_name = self.name
+            if old_name is not None and old_name != new_name:
+                from karaage.datastores import set_group_name
+                set_group_name(self, old_name, new_name)
+                log.change(self, "Renamed group")
 
-        # update the datastore
-        from karaage.datastores import save_group
-        save_group(self)
+            # update the datastore
+            from karaage.datastores import save_group
+            save_group(self)
 
     save.alters_data = True
 

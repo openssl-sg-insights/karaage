@@ -48,20 +48,22 @@ class Machine(AbstractBaseUser):
     _tracker = FieldTracker()
 
     def save(self, *args, **kwargs):
-        created = self.pk is None
+        with self._tracker:
+            # Don't update tracker state until done.
+            created = self.pk is None
 
-        # save the object
-        super(Machine, self).save(*args, **kwargs)
+            # save the object
+            super(Machine, self).save(*args, **kwargs)
 
-        if created:
-            log.add(self, 'Created')
-        for field in self._tracker.changed():
-            if field == "password":
-                log.change(self, 'Changed %s' % field)
-            else:
-                log.change(
-                    self,
-                    'Changed %s to %s' % (field, getattr(self, field)))
+            if created:
+                log.add(self, 'Created')
+            for field in self._tracker.changed():
+                if field == "password":
+                    log.change(self, 'Changed %s' % field)
+                else:
+                    log.change(
+                        self,
+                        'Changed %s to %s' % (field, getattr(self, field)))
 
     def delete(self, *args, **kwargs):
         # delete the object
@@ -134,67 +136,69 @@ class Account(models.Model):
         return self.person.projects.all()
 
     def save(self, *args, **kwargs):
-        created = self.pk is None
+        with self._tracker:
+            # Don't update tracker state until done.
+            created = self.pk is None
 
-        # save the object
-        super(Account, self).save(*args, **kwargs)
+            # save the object
+            super(Account, self).save(*args, **kwargs)
 
-        if created:
-            log.add(
-                self.person,
-                'Account %s: Created' % self)
-        for field in self._tracker.changed():
-            if field != "password":
-                log.change(
-                    self.person,
-                    'Account %s: Changed %s to %s'
-                    % (self, field, getattr(self, field)))
-
-        # check if it was renamed
-        if self._tracker.has_changed('username'):
-            old_username = self._tracker.previous('username')
-            if old_username is not None:
-                new_username = self.username
-                if self.date_deleted is None:
-                    from karaage.datastores import set_account_username
-                    set_account_username(self, old_username, new_username)
-                log.change(
-                    self.person,
-                    'Account %s: Changed username from %s to %s' %
-                    (self, old_username, new_username))
-
-        # check if deleted status changed
-        if self._tracker.has_changed('date_deleted'):
-            if self.date_deleted is not None:
-                # account is deactivated
-                from karaage.datastores import delete_account
-                delete_account(self)
-                log.delete(
-                    self.person,
-                    'Account %s: Deactivated account' % self)
-                # deleted
-            else:
-                # account is reactivated
+            if created:
                 log.add(
                     self.person,
-                    'Account %s: Activated' % self)
+                    'Account %s: Created' % self)
+            for field in self._tracker.changed():
+                if field != "password":
+                    log.change(
+                        self.person,
+                        'Account %s: Changed %s to %s'
+                        % (self, field, getattr(self, field)))
 
-        # makes sense to lock non-existant account
-        if self.date_deleted is not None:
-            self.login_enabled = False
+            # check if it was renamed
+            if self._tracker.has_changed('username'):
+                old_username = self._tracker.previous('username')
+                if old_username is not None:
+                    new_username = self.username
+                    if self.date_deleted is None:
+                        from karaage.datastores import set_account_username
+                        set_account_username(self, old_username, new_username)
+                    log.change(
+                        self.person,
+                        'Account %s: Changed username from %s to %s' %
+                        (self, old_username, new_username))
 
-        # update the datastore
-        if self.date_deleted is None:
-            from karaage.datastores import save_account
-            save_account(self)
+            # check if deleted status changed
+            if self._tracker.has_changed('date_deleted'):
+                if self.date_deleted is not None:
+                    # account is deactivated
+                    from karaage.datastores import delete_account
+                    delete_account(self)
+                    log.delete(
+                        self.person,
+                        'Account %s: Deactivated account' % self)
+                    # deleted
+                else:
+                    # account is reactivated
+                    log.add(
+                        self.person,
+                        'Account %s: Activated' % self)
 
-            if self._password is not None:
-                from karaage.datastores import set_account_password
-                set_account_password(self, self._password)
-                log.change(
-                    self.person,
-                    'Account %s: Changed Password' % self)
-                self._password = None
+            # makes sense to lock non-existant account
+            if self.date_deleted is not None:
+                self.login_enabled = False
+
+            # update the datastore
+            if self.date_deleted is None:
+                from karaage.datastores import save_account
+                save_account(self)
+
+                if self._password is not None:
+                    from karaage.datastores import set_account_password
+                    set_account_password(self, self._password)
+                    log.change(
+                        self.person,
+                        'Account %s: Changed Password' % self)
+                    self._password = None
     save.alters_data = True
 
     def can_view(self, request):

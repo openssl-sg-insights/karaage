@@ -112,38 +112,40 @@ class Application(models.Model):
         return reverse('kg_application_detail', args=[self.id])
 
     def save(self, *args, **kwargs):
-        created = self.pk is None
-        if not self.expires:
-            self.expires = datetime.datetime.now() + datetime.timedelta(days=7)
-        if not self.pk:
-            self.created_by = get_current_person()
+        with self._tracker:
+            # Don't update tracker state until done.
+            created = self.pk is None
+            if not self.expires:
+                self.expires = datetime.datetime.now() + datetime.timedelta(days=7)
+            if not self.pk:
+                self.created_by = get_current_person()
 
-            # Find the accessor from Application to type(self) class
-            if hasattr(Application._meta, 'get_fields'):
-                # Django >= 1.8
-                fields = [
-                    f for f in Application._meta.get_fields()
-                    if isinstance(f, OneToOneRel)
-                    and f.field.primary_key
-                    and f.auto_created
-                ]
+                # Find the accessor from Application to type(self) class
+                if hasattr(Application._meta, 'get_fields'):
+                    # Django >= 1.8
+                    fields = [
+                        f for f in Application._meta.get_fields()
+                        if isinstance(f, OneToOneRel)
+                        and f.field.primary_key
+                        and f.auto_created
+                    ]
 
-            else:
-                # Django <= 1.8
-                fields = [
-                    f for f in Application._meta.get_all_related_objects()
-                    if isinstance(f, OneToOneRel)
-                    and f.field.primary_key
-                ]
+                else:
+                    # Django <= 1.8
+                    fields = [
+                        f for f in Application._meta.get_all_related_objects()
+                        if isinstance(f, OneToOneRel)
+                        and f.field.primary_key
+                    ]
 
-            for rel in fields:
-                # Works with Django < 1.8 and => 1.8
-                related_model = getattr(rel, 'related_model', rel.model)
+                for rel in fields:
+                    # Works with Django < 1.8 and => 1.8
+                    related_model = getattr(rel, 'related_model', rel.model)
 
-                # if we find it, save the name
-                if related_model == type(self):
-                    self._class = rel.get_accessor_name()
-                    break
+                    # if we find it, save the name
+                    if related_model == type(self):
+                        self._class = rel.get_accessor_name()
+                        break
 
         super(Application, self).save(*args, **kwargs)
 

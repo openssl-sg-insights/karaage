@@ -59,16 +59,18 @@ class Software(models.Model):
         db_table = 'software'
 
     def save(self, *args, **kwargs):
-        created = self.pk is None
+        with self._tracker:
+            # Don't update tracker state until done.
+            created = self.pk is None
 
-        # save the object
-        super(Software, self).save(*args, **kwargs)
+            # save the object
+            super(Software, self).save(*args, **kwargs)
 
-        if created:
-            log.add(self, 'Created')
-        for field in self._tracker.changed():
-            log.change(self, 'Changed %s to %s'
-                       % (field, getattr(self, field)))
+            if created:
+                log.add(self, 'Created')
+            for field in self._tracker.changed():
+                log.change(self, 'Changed %s to %s'
+                           % (field, getattr(self, field)))
 
     save.alters_data = True
 
